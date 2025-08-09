@@ -85,24 +85,49 @@ impl Player {
         }
     }
 
-    pub fn want_to_play(&self) -> Option<usize> {
+    pub fn want_to_play(&self) -> (Option<usize>, bool) {
         // 显示当前玩家的手牌
         println!("{}'s turn:", self.name);
         println!("{}",self.to_string());
         loop {
-            println!("Which card do you want to play? (0 to {}): ", self.hand.len() - 1);
+            println!("Which card do you want to play? (-1 to {}): ", self.hand.len() - 1);
             let mut input = String::new();
             match io::stdin().read_line(&mut input) {
                 Ok(_) => {
-                    match input.trim().parse::<i32>() {
-                        Ok(idx) => {
-                            if idx >= 0 && (idx as usize) < self.hand.len() {
-                                return Some(idx as usize);
-                            } else {
-                                return None;
+                    let input = input.trim();
+                    let parts: Vec<&str> = input.split_whitespace().collect();
+                    match parts.len() {
+                        1 => match parts[0].parse::<i32>() {
+                            Ok(idx) => {
+                                if idx >= 0 && (idx as usize) < self.hand.len() {
+                                    return (Some(idx as usize), false);
+                                } else {
+                                    return (None, false);
+                                }
                             }
+                            _ => println!("Invalid input, please enter a valid card index."),
                         }
-                        _ => println!("Invalid input, please enter a valid card index."),
+                        2 => {
+                            let is_uno = parts[1].eq_ignore_ascii_case("uno");
+                            let idx = match parts[0].parse::<i32>() {
+                                Ok(idx) => {
+                                    if idx >= 0 && (idx as usize) < self.hand.len() {
+                                        Some(idx as usize)
+                                    } else {
+                                        None
+                                    }
+                                }
+                                _ => {
+                                    println!("Invalid input, please enter a valid card index.");
+                                    continue;
+                                }
+                            };
+                            return (idx, is_uno);
+                        }
+                        _ => {
+                            println!("Invalid input, please enter a valid card index.");
+                            continue;
+                        }
                     }
                 }
                 Err(_) => println!("Error reading input, please try again."),

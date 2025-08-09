@@ -2,11 +2,11 @@ use crate::cards::*;
 use crate::player::Player;
 
 pub struct UnoGame {
-    pub deck: UnoDeck,
-    pub players: Vec<Player>,
-    pub current_player: usize,
-    pub top_card: Option<UnoCard>,
-    pub direction: bool, // true for clockwise, false for counter-clockwise
+    deck: UnoDeck,
+    players: Vec<Player>,
+    current_player: usize,
+    top_card: Option<UnoCard>,
+    direction: bool, // true for clockwise, false for counter-clockwise
 }
 
 impl UnoGame {
@@ -94,7 +94,7 @@ impl UnoGame {
     }
 
     // 有人获胜:true, 否则false
-    fn play_card(&mut self, card: &UnoCard) -> bool {
+    fn play_card(&mut self, card: &UnoCard, is_uno: bool) -> bool {
         let current_player = &self.players[self.current_player];
         match card {
             UnoCard::WildCard(_, wild_type) => {
@@ -149,6 +149,12 @@ impl UnoGame {
             println!("{} wins!", self.players[self.current_player].name);
             return true;
         }
+        
+        // 检查玩家是否需要叫UNO, 并进行惩罚
+        if self.players[self.current_player].hand.len() == 1 && !is_uno {
+            println!("{} did not call UNO! Drawing 2 penalty cards.", self.players[self.current_player].name);
+            self.cards_distribution(self.current_player, 2);
+        }
         match card {
             UnoCard::ActionCard(_, action) => {
                 if *action == Action::SKIP {
@@ -196,7 +202,7 @@ impl UnoGame {
             let current_player = &mut self.players[self.current_player];
             // 玩家出牌逻辑
             // 获取玩家想打的牌
-            let card_to_play = current_player.want_to_play();
+            let (card_to_play, is_uno) = current_player.want_to_play();
             match card_to_play {
                 None => {
                     // 如果无法出牌，则抽卡
@@ -212,10 +218,17 @@ impl UnoGame {
                         loop {
                             match std::io::stdin().read_line(&mut response) {
                                 Ok(_) => {
-                                    if response.trim().eq_ignore_ascii_case("yes") {
-                                        self.play_card(&drawn_card);
+                                    let response: Vec<&str> = response.trim().split_whitespace().collect();
+                                    let is_uno = match response.len() {
+                                        2 => {
+                                            response[1].eq_ignore_ascii_case("uno")
+                                        },
+                                        _ => false,
+                                    };
+                                    if response[0].eq_ignore_ascii_case("yes") {
+                                        self.play_card(&drawn_card, is_uno);
                                         break;
-                                } else if response.trim().eq_ignore_ascii_case("no"){
+                                    } else if response[0].eq_ignore_ascii_case("no"){
                                         println!("You chose not to play the drawn card.");
                                         self.players[self.current_player].hand.push(drawn_card);
                                         self.current_player = self.next_player();
@@ -238,7 +251,7 @@ impl UnoGame {
                 Some(card) => {
                     // 如果玩家选择了一张牌,检查是否合法
                     if let Some(card) = current_player.can_play_card(card, top_card).ok() {
-                        if self.play_card(&card) {
+                        if self.play_card(&card, is_uno) {
                             break;
                         }
                     } else {
