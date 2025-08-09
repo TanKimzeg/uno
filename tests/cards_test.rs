@@ -1,4 +1,4 @@
-use uno::cards::*;
+use uno::game::*;
 
 #[cfg(test)]
 mod card_tests {

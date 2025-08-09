@@ -1,5 +1,6 @@
 use uno::game::*;
 
+#[cfg(test)]
 mod game_test {
     use super::*;
 
@@ -8,6 +9,6 @@ mod game_test {
     fn test_play() {
         let players = vec!["Alice", "Bob", "Charlie"];
         let mut uno_game: UnoGame = UnoGame::new();
-        uno_game.play(players);
+        uno_game.start(players);
     }
 }

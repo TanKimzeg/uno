@@ -1,5 +1,5 @@
-use crate::cards::*;
-use crate::player::Player;
+use crate::game::cards::*;
+use crate::game::player::Player;
 
 pub struct UnoGame {
     deck: UnoDeck,
@@ -50,14 +50,14 @@ impl UnoGame {
         }
     }
 
-    pub fn change_direction(&mut self) {
+    fn change_direction(&mut self) {
         self.direction = !self.direction;
     }
 
-    pub fn cards_distribution(&mut self, player_index: usize, num_cards: usize) {
+    fn cards_distribution(&mut self, player_index: usize, num_cards: usize) {
         for _ in 0..num_cards {
             if let Some(card) = self.deck.cards.pop() {
-                self.players[player_index].hand.push(card);
+                self.players[player_index].push_card(card);
             }
             else {
                 // eprintln!("No more cards in the deck to distribute!");
@@ -66,7 +66,7 @@ impl UnoGame {
         }
     }
 
-    pub fn no_card_to_play(&mut self) -> UnoCard {
+    fn no_card_to_play(&mut self) -> UnoCard {
         // 如果没有牌可以打，抽一张牌
         if let Some(card) = self.deck.cards.pop() {
             println!("{} draws a card.", self.players[self.current_player].name);
@@ -77,7 +77,7 @@ impl UnoGame {
         }
     }
 
-    pub fn next_player(&self) -> usize {
+    fn next_player(&self) -> usize {
         if self.direction {
             (self.current_player + 1) % self.players.len()
         } else {
@@ -151,7 +151,7 @@ impl UnoGame {
         }
         
         // 检查玩家是否需要叫UNO, 并进行惩罚
-        if self.players[self.current_player].hand.len() == 1 && !is_uno {
+        if self.players[self.current_player].display_hand().len() == 1 && !is_uno {
             println!("{} did not call UNO! Drawing 2 penalty cards.", self.players[self.current_player].name);
             self.cards_distribution(self.current_player, 2);
         }
@@ -184,7 +184,7 @@ impl UnoGame {
         false
     }
 
-    pub fn play(&mut self, player_list: Vec<&str>) {
+    pub fn start(&mut self, player_list: Vec<&str>) {
         // Uno 游戏主体逻辑
 
         // 1. 初始化游戏
@@ -207,13 +207,13 @@ impl UnoGame {
                 None => {
                     // 如果无法出牌，则抽卡
                     println!(
-                        "{} cannot play a card, drawing a card.",
+                        "{} cannot start a card, drawing a card.",
                         current_player.name
                     );
                     let drawn_card = self.no_card_to_play();
                     if valid_card(&drawn_card, self.top_card.as_ref()) {
-                        println!("valid card to play: {:}", drawn_card.to_string());
-                        println!("Do you want to play this card? (yes/no)");
+                        println!("valid card to start: {:}", drawn_card.to_string());
+                        println!("Do you want to start this card? (yes/no)");
                         let mut response = String::new();
                         loop {
                             match std::io::stdin().read_line(&mut response) {
@@ -229,8 +229,8 @@ impl UnoGame {
                                         self.play_card(&drawn_card, is_uno);
                                         break;
                                     } else if response[0].eq_ignore_ascii_case("no"){
-                                        println!("You chose not to play the drawn card.");
-                                        self.players[self.current_player].hand.push(drawn_card);
+                                        println!("You chose not to start the drawn card.");
+                                        self.players[self.current_player].push_card(drawn_card);
                                         self.current_player = self.next_player();
                                         break;
                                     }
@@ -242,8 +242,8 @@ impl UnoGame {
                             }
                         }
                     } else {
-                        println!("The drawn card is not valid to play, adding it to hand.");
-                        self.players[self.current_player].hand.push(drawn_card);
+                        println!("The drawn card is not valid to start, adding it to hand.");
+                        self.players[self.current_player].push_card(drawn_card);
                         self.current_player = self.next_player();
                     }
                     continue;
@@ -266,11 +266,11 @@ impl UnoGame {
         println!("Game over!");
     }
 
-    pub fn calculate_scores(&self) {
+    fn calculate_scores(&self) {
         // 游戏结束，计算每个玩家的分数并公布排名
         let mut scores = Vec::new();
         for player in &self.players {
-            let score: i32 = player.hand.iter().map(|card| card.get_value()).sum();
+            let score: i32 = player.display_hand().iter().map(|card| card.get_value()).sum();
             scores.push((player.name.clone(), score));
         }
         scores.sort_by(|a, b| a.1.cmp(&b.1)); // 按分数升序排序
@@ -285,7 +285,7 @@ impl UnoGame {
         println!("=============================================");
     }
 
-    pub fn challenge(&mut self) {
+    fn challenge(&mut self) {
         // 挑战逻辑
         // 如果玩家认为对手打出的牌不合法，可以挑战
         // 如果挑战成功，对手需要抽取两张牌

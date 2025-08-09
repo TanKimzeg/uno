@@ -7,5 +7,5 @@ fn main() {
     let mut uno_game = UnoGame::new();
     
     // 开始游戏
-    uno_game.play(players);
+    uno_game.start(players);
 }

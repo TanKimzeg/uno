@@ -2,11 +2,11 @@ use std::fmt::Display;
 use std::io;
 use colored::Colorize;
 
-use crate::cards::*;
+use crate::game::cards::*;
 
 pub struct Player {
     pub name: String,
-    pub hand: Vec<UnoCard>,
+    hand: Vec<UnoCard>,
 }
 
 impl Player {
@@ -19,6 +19,10 @@ impl Player {
 
     pub fn display_hand(&self) -> &Vec<UnoCard> {
         &self.hand
+    }
+
+    pub fn push_card(&mut self, card: UnoCard) {
+        self.hand.push(card);
     }
 
     pub fn can_play_card(&mut self, card_idx: usize, top_card: Option<&UnoCard>) -> Result<UnoCard, String> {
@@ -151,3 +155,4 @@ impl Display for Player {
         writeln!(f, "====================================")
     }
 }
+
