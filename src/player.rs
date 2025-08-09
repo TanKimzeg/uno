@@ -1,5 +1,6 @@
 use std::fmt::Display;
 use std::io;
+use colored::Colorize;
 
 use crate::cards::*;
 
@@ -41,7 +42,13 @@ impl Player {
                     color: None,
                     wild_type: *wild_type,
                 };
-                println!("Select a color (0: Red, 1: Green, 2: Blue, 3: Yellow): ");
+                println!(
+                    "Select a color ({}, {}, {}, {}): ",
+                    "0: Red".red(),
+                    "1: Green".green(),
+                    "2: Blue".blue(),
+                    "3: Yellow".yellow()
+                );
                 let mut input = String::new();
                 loop {
                     match io::stdin().read_line(&mut input) {
@@ -78,9 +85,7 @@ impl Player {
         }
     }
 
-    pub fn want_to_play(&self) -> usize {
-        use std::io;
-
+    pub fn want_to_play(&self) -> Option<usize> {
         // 显示当前玩家的手牌
         println!("{}'s turn:", self.name);
         println!("{}",self.to_string());
@@ -89,8 +94,14 @@ impl Player {
             let mut input = String::new();
             match io::stdin().read_line(&mut input) {
                 Ok(_) => {
-                    match input.trim().parse::<usize>() {
-                        Ok(idx) if idx < self.hand.len() => return idx,
+                    match input.trim().parse::<i32>() {
+                        Ok(idx) => {
+                            if idx >= 0 && (idx as usize) < self.hand.len() {
+                                return Some(idx as usize);
+                            } else {
+                                return None;
+                            }
+                        }
                         _ => println!("Invalid input, please enter a valid card index."),
                     }
                 }
@@ -108,8 +119,9 @@ impl Display for Player {
         writeln!(f, "------------------------------------")?;
         writeln!(f, "{:<5} | {:<15}", "Index", "Card")?;
         writeln!(f, "------------------------------------")?;
+        writeln!(f, "{:>5} | {:<15}","-1", "  Draw Card")?;
         for (idx, card) in self.hand.iter().enumerate() {
-            writeln!(f, "{:<5} | {:<15}", idx, card)?;
+            writeln!(f, "{:>5} | {:<15}", idx, card)?;
         }
         writeln!(f, "====================================")
     }

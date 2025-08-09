@@ -1,5 +1,5 @@
-use std::fmt::Display;
 use colored::Colorize;
+use std::fmt::Display;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum UnoCard {
@@ -13,7 +13,9 @@ impl UnoCard {
         match self {
             UnoCard::NumberCard(color, _) => color,
             UnoCard::ActionCard(color, _) => color,
-            UnoCard::WildCard(color, _) => color.as_ref().expect("Wild card must have a color when used!"),
+            UnoCard::WildCard(color, _) => color
+                .as_ref()
+                .expect("Wild card must have a color when used!"),
         }
     }
 
@@ -30,9 +32,7 @@ impl UnoCard {
         // 0-9数字牌计0-9分，功能牌计20分，万能牌计50分
         // 负分最少的为最大赢家。
         match self {
-            UnoCard::NumberCard(_, number) => {
-                number.to_u8() as i32
-            },
+            UnoCard::NumberCard(_, number) => number.to_u8() as i32,
             UnoCard::WildCard(_, _) => 50,
             UnoCard::ActionCard(_, _) => 20,
         }
@@ -42,26 +42,34 @@ impl UnoCard {
 impl Display for UnoCard {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UnoCard::NumberCard(color, number) => write!(f, "Number Card: {} {}", color.to_string(), number.to_string())?,
-            UnoCard::ActionCard(color, action) => write!(f, "Action Card: {} {:?}", color.to_string(), action)?,
+            UnoCard::NumberCard(color, number) => write!(
+                f,
+                "Number Card: {} {}",
+                color.to_string(),
+                number.to_string()
+            )?,
+            UnoCard::ActionCard(color, action) => {
+                write!(f, "Action Card: {} {:?}", color.to_string(), action)?
+            }
             UnoCard::WildCard(color, wild_type) => {
                 if let Some(c) = color {
                     write!(f, "  Wild Card: {:} {:?}", c.to_string(), wild_type)?
                 } else {
                     write!(f, "  Wild Card: {:>6?}", wild_type)?
                 }
-            },
+            }
         }
         Ok(())
     }
 }
 
-pub fn valid_card(card: &UnoCard, top_card: Option<&UnoCard>) -> bool{
+pub fn valid_card(card: &UnoCard, top_card: Option<&UnoCard>) -> bool {
     if let Some(top_card) = top_card {
-        if is_wild_card(card){
+        if is_wild_card(card) {
             return true;
         }
-        if same_color(card, top_card) || same_number(card, top_card) || same_action(card, top_card) {
+        if same_color(card, top_card) || same_number(card, top_card) || same_action(card, top_card)
+        {
             return true;
         }
     } else {
@@ -85,11 +93,10 @@ fn same_color(card: &UnoCard, top_card: &UnoCard) -> bool {
     false
 }
 
-fn same_number(card: &UnoCard, top_card: &UnoCard) -> bool{
+fn same_number(card: &UnoCard, top_card: &UnoCard) -> bool {
     let card_num = card.get_number();
     let top_card_num = top_card.get_number();
-    if card_num == None || top_card_num == None 
-        || card.get_number() != top_card.get_number() {
+    if card_num == None || top_card_num == None || card.get_number() != top_card.get_number() {
         return false;
     }
     true
@@ -97,8 +104,7 @@ fn same_number(card: &UnoCard, top_card: &UnoCard) -> bool{
 
 fn same_action(card: &UnoCard, top_card: &UnoCard) -> bool {
     match (card, top_card) {
-        (UnoCard::ActionCard(_, action1), UnoCard::ActionCard(_, action2)) => 
-        { action1 == action2 },
+        (UnoCard::ActionCard(_, action1), UnoCard::ActionCard(_, action2)) => action1 == action2,
         _ => false,
     }
 }
@@ -245,21 +251,27 @@ pub struct UnoDeck {
 }
 
 impl UnoDeck {
-    pub fn new() -> UnoDeck{
+    pub fn new() -> UnoDeck {
         // Initialize the deck with standard Uno cards
-        
+
         // 76 Number Cards
         let mut number_cards = Vec::new();
         for &color in [Color::RED, Color::GREEN, Color::BLUE, Color::YELLOW].iter() {
             for number in 0..10 {
                 if let Some(num) = Number::from_u8(number) {
-                    number_cards.push(NumberCard { color: color.clone(), number: num });
+                    number_cards.push(NumberCard {
+                        color: color.clone(),
+                        number: num,
+                    });
                 }
             }
             // Add two of each number card except zero
             for number in 1..10 {
                 if let Some(num) = Number::from_u8(number) {
-                    number_cards.push(NumberCard { color: color.clone(), number: num });
+                    number_cards.push(NumberCard {
+                        color: color.clone(),
+                        number: num,
+                    });
                 }
             }
         }
@@ -268,18 +280,32 @@ impl UnoDeck {
         let mut action_cards = Vec::new();
         for &color in [Color::RED, Color::GREEN, Color::BLUE, Color::YELLOW].iter() {
             for _ in 0..2 {
-                action_cards.push(ActionCard { color: color.clone(), action: Action::SKIP });
-                action_cards.push(ActionCard { color: color.clone(), action: Action::REVERSE });
-                action_cards.push(ActionCard { color: color.clone(), action: Action::DRAWTWO });
+                action_cards.push(ActionCard {
+                    color: color.clone(),
+                    action: Action::SKIP,
+                });
+                action_cards.push(ActionCard {
+                    color: color.clone(),
+                    action: Action::REVERSE,
+                });
+                action_cards.push(ActionCard {
+                    color: color.clone(),
+                    action: Action::DRAWTWO,
+                });
             }
         }
-
 
         // 8 Wild Cards
         let mut wild_cards = Vec::new();
         for _ in 0..4 {
-            wild_cards.push(WildCard { color: None, wild_type: WildType::WILD });
-            wild_cards.push(WildCard { color: None, wild_type: WildType::DRAWFOUR });
+            wild_cards.push(WildCard {
+                color: None,
+                wild_type: WildType::WILD,
+            });
+            wild_cards.push(WildCard {
+                color: None,
+                wild_type: WildType::DRAWFOUR,
+            });
         }
 
         let mut cards = Vec::new();
@@ -294,19 +320,16 @@ impl UnoDeck {
             cards.push(UnoCard::WildCard(card.color, card.wild_type));
         }
 
-        UnoDeck {
-            cards,
-        }
+        UnoDeck { cards }
     }
-    
+
     pub fn shuffle(&mut self) {
         use rand::seq::SliceRandom;
         use rand::thread_rng;
 
         let mut rng = thread_rng();
-        
+
         // Shuffle number cards
         self.cards.shuffle(&mut rng);
     }
 }
-

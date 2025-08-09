@@ -93,12 +93,16 @@ impl UnoGame {
         }
     }
 
-    fn play_card(&mut self, card: &UnoCard) -> bool{
+    // 有人获胜:true, 否则false
+    fn play_card(&mut self, card: &UnoCard) -> bool {
         let current_player = &self.players[self.current_player];
         match card {
             UnoCard::WildCard(_, wild_type) => {
                 // 如果是万能卡，要求玩家选择颜色
-                println!("{} played a wild card, please select a color.", current_player.name);
+                println!(
+                    "{} played a wild card, please select a color.",
+                    current_player.name
+                );
                 let card = current_player.select_color(&card);
                 self.top_card = Some(card);
                 match wild_type {
@@ -114,24 +118,31 @@ impl UnoGame {
             UnoCard::ActionCard(_, action) => {
                 match action {
                     Action::SKIP => {
-                        println!("{} skips their turn.", self.players[self.next_player()].name);
-                    },
+                        println!(
+                            "{} skips their turn.",
+                            self.players[self.next_player()].name
+                        );
+                    }
                     Action::DRAWTWO => {
                         self.cards_distribution(self.next_player(), 2);
                         println!("{} draws 2 cards.", self.players[self.next_player()].name);
-                    },
+                    }
                     Action::REVERSE => {
                         self.change_direction();
                         println!("Direction changed!");
-                    },
+                    }
                 }
                 self.top_card = Some(*card);
-            },
+            }
             UnoCard::NumberCard(_, _) => {
                 self.top_card = Some(*card);
             }
         }
-    println!("{} played: {:}", self.players[self.current_player].name, &self.top_card.unwrap().to_string());
+        println!(
+            "{} played: {:}",
+            self.players[self.current_player].name,
+            &self.top_card.unwrap().to_string()
+        );
 
         // 检查是否有玩家获胜,并切换到下一个玩家
         if self.players[self.current_player].display_hand().is_empty() {
@@ -141,14 +152,14 @@ impl UnoGame {
         match card {
             UnoCard::ActionCard(_, action) => {
                 if *action == Action::SKIP {
-                // 下家不能出牌
-                        self.current_player = self.next_player();
-                        self.current_player = self.next_player();
+                    // 下家不能出牌
+                    self.current_player = self.next_player();
+                    self.current_player = self.next_player();
                 }
                 else {
                     self.current_player = self.next_player();
                 }
-            },
+            }
             UnoCard::WildCard(_, wild_type) => {
                 // 下家不能出牌
                 if *wild_type == WildType::DRAWFOUR {
@@ -162,7 +173,7 @@ impl UnoGame {
             _ => {
                 // 下家出牌
                 self.current_player = self.next_player();
-            },
+            }
         }
         false
     }
@@ -186,50 +197,60 @@ impl UnoGame {
             // 玩家出牌逻辑
             // 获取玩家想打的牌
             let card_to_play = current_player.want_to_play();
-            if let Some(card) = current_player.can_play_card(card_to_play, top_card).ok() {
-                if self.play_card(&card) {
-                    break;
-                }
-            } else {
-                // 如果无法出牌，则抽卡
-                println!("{} cannot play a card, drawing a card.", current_player.name);
-                let drawn_card = self.no_card_to_play();
-                if valid_card(&drawn_card, self.top_card.as_ref()) {
-                    println!("valid card to play: {:}", drawn_card.to_string());
-                    println!("Do you want to play this card? (yes/no)");
-                    let mut response = String::new();
-                    loop {
-                        match std::io::stdin().read_line(&mut response) {
-                            Ok(_) => {
-                                if response.trim().eq_ignore_ascii_case("yes") {
-                                    self.play_card(&drawn_card);
-                                    break;
+            match card_to_play {
+                None => {
+                    // 如果无法出牌，则抽卡
+                    println!(
+                        "{} cannot play a card, drawing a card.",
+                        current_player.name
+                    );
+                    let drawn_card = self.no_card_to_play();
+                    if valid_card(&drawn_card, self.top_card.as_ref()) {
+                        println!("valid card to play: {:}", drawn_card.to_string());
+                        println!("Do you want to play this card? (yes/no)");
+                        let mut response = String::new();
+                        loop {
+                            match std::io::stdin().read_line(&mut response) {
+                                Ok(_) => {
+                                    if response.trim().eq_ignore_ascii_case("yes") {
+                                        self.play_card(&drawn_card);
+                                        break;
                                 } else if response.trim().eq_ignore_ascii_case("no"){
-                                    println!("You chose not to play the drawn card.");
-                                    self.players[self.current_player].hand.push(drawn_card);
-                                    self.current_player = self.next_player();
-                                    break;
+                                        println!("You chose not to play the drawn card.");
+                                        self.players[self.current_player].hand.push(drawn_card);
+                                        self.current_player = self.next_player();
+                                        break;
+                                    }
+                                }
+                                Err(_) => {
+                                    println!("Error reading input, please try again.");
+                                    continue;
                                 }
                             }
-                            Err(_) => {
-                                println!("Error reading input, please try again.");
-                                continue;
-                            }
                         }
+                    } else {
+                        println!("The drawn card is not valid to play, adding it to hand.");
+                        self.players[self.current_player].hand.push(drawn_card);
+                        self.current_player = self.next_player();
+                    }
+                    continue;
+                }
+                Some(card) => {
+                    // 如果玩家选择了一张牌,检查是否合法
+                    if let Some(card) = current_player.can_play_card(card, top_card).ok() {
+                        if self.play_card(&card) {
+                            break;
+                        }
+                    } else {
+                        println!("The selected card is not valid for the top card, please choose a valid card.");
+                        continue;
                     }
                 }
-                else {
-                    println!("The drawn card is not valid to play, adding it to hand.");
-                    self.players[self.current_player].hand.push(drawn_card);
-                    self.current_player = self.next_player();
-                }
-                continue;
             }
         }
         // 3. 游戏结束,计分
         self.calculate_scores();
         println!("Game over!");
-
     }
 
     pub fn calculate_scores(&self) {
@@ -259,14 +280,11 @@ impl UnoGame {
         // 这里可以实现更复杂的逻辑
         let challenge_successful = false;
         if challenge_successful {
-
             self.cards_distribution(self.previous_player(), 2);
             println!("Challenge successful! Opponent draws 2 cards.");
         } else {
-
             self.cards_distribution(self.previous_player(), 2);
             println!("Challenge failed! You draw 2 cards.");
         }
     }
-
 }
