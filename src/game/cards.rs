@@ -1,7 +1,8 @@
 use colored::Colorize;
 use std::fmt::Display;
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum UnoCard {
     NumberCard(Color, Number),
     ActionCard(Color, Action),
@@ -9,13 +10,13 @@ pub enum UnoCard {
 }
 
 impl UnoCard {
-    pub fn get_color(&self) -> &Color {
+    pub fn get_color(&self) -> Result<&Color, &str> {
         match self {
-            UnoCard::NumberCard(color, _) => color,
-            UnoCard::ActionCard(color, _) => color,
+            UnoCard::NumberCard(color, _) => Ok(color),
+            UnoCard::ActionCard(color, _) => Ok(color),
             UnoCard::WildCard(color, _) => color
                 .as_ref()
-                .expect("Wild card must have a color when used!"),
+                .ok_or("Wild card must have a color when used!"),
         }
     }
 
@@ -63,7 +64,7 @@ impl Display for UnoCard {
     }
 }
 
-pub fn valid_card(card: &UnoCard, top_card: Option<&UnoCard>) -> bool {
+pub fn valid_card(card: &UnoCard, top_card: &Option<UnoCard>) -> bool {
     if let Some(top_card) = top_card {
         if is_wild_card(card) {
             return true;
@@ -87,7 +88,7 @@ fn is_wild_card(card: &UnoCard) -> bool {
 }
 
 fn same_color(card: &UnoCard, top_card: &UnoCard) -> bool {
-    if card.get_color() == top_card.get_color() {
+    if card.get_color().ok() == top_card.get_color().ok() {
         return true;
     }
     false
@@ -109,7 +110,7 @@ fn same_action(card: &UnoCard, top_card: &UnoCard) -> bool {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum Color {
     RED,
     GREEN,
@@ -150,7 +151,7 @@ impl Display for Color {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum Number {
     ZERO,
     ONE,
@@ -225,7 +226,7 @@ pub struct ActionCard {
     pub action: Action,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum Action {
     SKIP,
     REVERSE,
@@ -237,7 +238,7 @@ pub struct WildCard {
     pub wild_type: WildType,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum WildType {
     WILD,
     DRAWFOUR,
