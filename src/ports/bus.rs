@@ -1,7 +1,7 @@
 use crate::game::events::GameEvent;
 
 pub trait EventHandler: Send + Sync {
-    fn handle_events(&self, event: &[GameEvent]);
+    fn handle_events(&self, events: &[GameEvent]);
 }
 
 pub struct EventBus {
@@ -46,7 +46,7 @@ pub struct ConsolerLogger;
 impl EventHandler for ConsolerLogger {
     fn handle_events(&self, events: &[GameEvent]) {
         for event in events {
-            println!("[ConsoleLogger] Event: {:?}", event);
+            eprintln!("[ConsoleLogger] Event: {:?}", event);
         }
     }
 }

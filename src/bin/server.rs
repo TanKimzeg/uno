@@ -139,6 +139,15 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
     match msg {
         Client2Server::JoinGame { name } => {
             // 生成欢迎与可能的开局事件（注意先释放锁再 publish）
+            {
+                let st = state.lock().unwrap();
+                if st.started {
+                    let _ = my_tx.send(Server2Client::ServerError {
+                        message: "Game already started".into(),
+                    });
+                    return;
+                }
+            }
             let welcome = {
                 let mut st = state.lock().unwrap();
                 let player_id = st.players.len();
@@ -156,14 +165,17 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
             let _ = my_tx.send(Server2Client::ServerError {
                 message: format!("{} starts the game!", player_id).into(),
             });
-            let mut st = state.lock().unwrap();
-            if st.started {
-                let _ = my_tx.send(Server2Client::ServerError {
-                    message: "Game already started".into(),
-                });
-                return;
+            {
+                let st = state.lock().unwrap();
+                if st.started {
+                    let _ = my_tx.send(Server2Client::ServerError {
+                        message: "Game already started".into(),
+                    });
+                    return;
+                }
             }
             let ev = {
+                let mut st = state.lock().unwrap();
                 let players = st.players.clone();
                 st.started = true;
                 st.game.init_game(players)

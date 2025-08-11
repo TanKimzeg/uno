@@ -32,7 +32,7 @@ pub enum GameEvent {
         clockwise: bool,
     },
     TopCardChanged {
-        top_card: Option<UnoCard>,
+        top_card: UnoCard,
     },
     PlayerTurn {
         player_id: usize,

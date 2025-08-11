@@ -41,7 +41,8 @@ impl UnoGame {
             if let Some(card) = self.deck.cards.pop() {
                 if !card.get_number().is_none(){
                     self.top_card = Some(card);
-                    ev.push(GE::TopCardChanged { top_card: self.top_card.clone() });
+                    ev.push(GE::TopCardChanged { top_card: self.top_card.
+                        expect("Top card should be set").clone() });
                     ev.push(GE::PlayerTurn { player_id: self.current_player });
                     break;
                 }
@@ -153,7 +154,8 @@ impl UnoGame {
         self.top_card = Some(card.clone());
         ev.push(GE::CardPlayed { 
             player_id: player_id, card: card.clone() });
-        ev.push(GE::TopCardChanged { top_card: self.top_card.clone() });
+        ev.push(GE::TopCardChanged { top_card: self.top_card.
+            expect("Top card should be set").clone() });
 
 
         // 牌生效
