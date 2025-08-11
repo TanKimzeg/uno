@@ -7,9 +7,6 @@ pub enum GameEvent {
         player_id: usize,
         name: String,
     },
-    PlayerLeft {
-        player_id: usize,
-    },
 
     CardPlayed {
         player_id: usize,

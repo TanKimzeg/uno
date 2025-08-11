@@ -1,7 +1,7 @@
 use crate::game::events::GameEvent;
 
 pub trait EventHandler: Send + Sync {
-    fn handle_event(&self, event: &GameEvent);
+    fn handle_events(&self, event: &[GameEvent]);
 }
 
 pub struct EventBus {
@@ -19,9 +19,9 @@ impl EventBus {
         self.handlers.push(h);
     }
 
-    pub fn publish_event(&self, event: &GameEvent) {
+    pub fn publish_events(&self, events: &[GameEvent]) {
         for handler in &self.handlers {
-            handler.handle_event(event);
+            handler.handle_events(events);
         }
     }
 
@@ -29,8 +29,10 @@ impl EventBus {
     where
         I: IntoIterator<Item = GameEvent>,
     {
-        for event in events {
-            self.publish_event(&event);
+
+        let events: Vec<GameEvent> = events.into_iter().collect();
+        for h in &self.handlers {
+            h.handle_events(&events);
         }
     }
 
@@ -42,7 +44,9 @@ impl EventBus {
 pub struct ConsolerLogger;
 
 impl EventHandler for ConsolerLogger {
-    fn handle_event(&self, event: &GameEvent) {
-        println!("[ConsoleLogger] Event: {:?}", event);
+    fn handle_events(&self, events: &[GameEvent]) {
+        for event in events {
+            println!("[ConsoleLogger] Event: {:?}", event);
+        }
     }
 }

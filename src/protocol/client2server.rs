@@ -8,9 +8,8 @@ pub enum Client2Server {
         name: String,
         
     },
-    Reconnect {
+    StartGame {
         player_id: usize,
-        session_id: String,
     },
 
     PlayCard {
@@ -29,9 +28,6 @@ pub enum Client2Server {
     ChallengeWildDrawFour {
         challenger_id: usize,
         challenged_id: usize,
-    },
-    CallUNO {
-        player_id: usize,
     },
 
     LeaveGame {

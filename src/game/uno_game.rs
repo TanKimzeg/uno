@@ -5,9 +5,9 @@ use crate::game::events::GameEvent as GE;
 pub struct UnoGame {
     deck: UnoDeck,
     players: Vec<Player>,
-    current_player: usize,
-    top_card: Option<UnoCard>,
-    direction: bool, // true for clockwise, false for counter-clockwise
+    pub current_player: usize,
+    pub top_card: Option<UnoCard>,
+    pub direction: bool, // true for clockwise, false for counter-clockwise
 }
 
 impl UnoGame {
@@ -21,6 +21,12 @@ impl UnoGame {
             direction: true,
             current_player: 0,
         }
+    }
+
+    pub fn get_players_cards_count(&self) -> Vec<(String, usize)> {
+        self.players.iter()
+            .map(|p| (p.name.clone(), p.display_hand().len()))
+            .collect()
     }
 
     pub fn init_game(&mut self, players: Vec<String>) -> Vec<GE>{
@@ -231,10 +237,7 @@ impl UnoGame {
                     ev.push(GE::DrawnCardPlayable { player_id: player_id });
                 }
                 else {
-                    ev.push(GE::PlayerPassed { player_id: player_id });
-                    self.current_player = self.next_player();
-                    ev.push(GE::PlayerTurn { player_id: 
-                        self.players[self.current_player].id });
+                    ev.extend(self.player_pass(player_id));
                 }
             }
             Err(e) => {
@@ -244,6 +247,15 @@ impl UnoGame {
         ev
     }
 
+    pub fn player_pass(&mut self, player_id: usize) -> Vec<GE> {
+        let mut ev = Vec::new();
+        ev.push(GE::PlayerPassed { player_id: player_id });
+        self.current_player = self.next_player();
+        ev.push(GE::PlayerTurn { player_id: 
+            self.players[self.current_player].id });
+
+        ev
+    }
 
     fn calculate_scores(&self) -> Vec<(String, i32)> {
         // 游戏结束，计算每个玩家的分数并公布排名
