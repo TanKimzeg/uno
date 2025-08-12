@@ -46,8 +46,11 @@ struct AppState {
     mode: UiMode,
     pending_action: Option<PendingPlay>,
     color_pick_index: usize,
-    name_buffer: String,
+    room_input: String,
+    name_input: String,
+    input_focus: InputFocus,
     scoreboard: Option<Vec<ScoreEntry>>,
+    room_id: Option<String>, // 新增: 当前房间ID
 }
 #[derive(Clone, Copy, Debug, Default)]
 enum UiMode {
@@ -72,6 +75,9 @@ struct ScoreEntry {
     rank: usize,
     is_winner: bool,
 }
+#[derive(Clone, Copy, Debug)]
+enum InputFocus { Room, Name }
+impl Default for InputFocus { fn default() -> Self { InputFocus::Room } }
 
 impl AppState {
     fn push_log<S: Into<String>>(&mut self, s: S) {
@@ -236,8 +242,10 @@ fn handle_key_normal(
     match key.code {
         KeyCode::Char('j') => {
             app.mode = UiMode::NameInput;
-            app.name_buffer.clear();
-            app.push_log("输入昵称后回车提交，Esc 取消");
+            app.room_input.clear();
+            app.name_input.clear();
+            app.input_focus = InputFocus::Room;
+            app.push_log("输入房间与昵称，Tab 切换，Enter 提交，Esc 取消");
             app.input_hint = vec![Line::from("S 开局")];
         }
         KeyCode::Char('s') => {
@@ -499,17 +507,14 @@ fn ui(f: &mut ratatui::Frame<'_>, app: &AppState) {
 
 fn draw_status(f: &mut ratatui::Frame<'_>, area: Rect, app: &AppState) {
     let title = format!(
-        "UNO | 玩家:{} | 当前:{} | 方向:{}",
+        "UNO | 房间:{} | 玩家:{} | 当前:{} | 方向:{}",
+        app.room_id.as_deref().unwrap_or("-"),
         app.game_state
             .player_id
             .map(|v| v.to_string())
             .unwrap_or_else(|| "-".into()),
         app.game_state.current_player,
-        if app.game_state.clockwise {
-            "顺时针"
-        } else {
-            "逆时针"
-        }
+        if app.game_state.clockwise { "顺时针" } else { "逆时针" }
     );
     let para = Paragraph::new(title).block(Block::default().borders(Borders::ALL).title("状态"));
     f.render_widget(para, area);
@@ -610,33 +615,34 @@ fn draw_drawn_playable_popup(f: &mut ratatui::Frame<'_>, area: Rect) {
         .block(Block::default().borders(Borders::ALL).title("摸牌可出"));
     f.render_widget(block, popup);
 }
-fn handle_key_name_input(
-    key: KeyEvent,
-    app: &mut AppState,
-    tx: &Sender<Client2Server>,
-) -> io::Result<()> {
+fn handle_key_name_input(key: KeyEvent, app: &mut AppState, tx: &Sender<Client2Server>) -> io::Result<()> {
     match key.code {
-        KeyCode::Esc => {
-            app.mode = UiMode::Normal;
-            app.name_buffer.clear();
-        }
+        KeyCode::Esc => { app.mode = UiMode::Normal; }
+        KeyCode::Tab => { app.input_focus = match app.input_focus { InputFocus::Room => InputFocus::Name, InputFocus::Name => InputFocus::Room }; }
         KeyCode::Enter => {
-            let name = app.name_buffer.trim();
-            if !name.is_empty() {
-                tx.send(Client2Server::JoinGame {
-                    name: name.to_string(),
-                })
-                .ok();
-                app.push_log(format!("发送 Join: {}", name));
+            if app.room_input.trim().is_empty() { app.push_log("房间ID不能为空"); }
+            else if app.name_input.trim().is_empty() { app.push_log("昵称不能为空"); }
+            else {
+                let room_id = app.room_input.trim().to_string();
+                let name = app.name_input.trim().to_string();
+                tx.send(Client2Server::JoinGame { room_id: room_id.clone(), name: name.clone() }).ok();
+                app.room_id = Some(room_id.clone());
+                app.push_log(format!("发送 JoinGame room={} name={}", room_id, name));
                 app.mode = UiMode::Normal;
+                app.input_hint = vec![Line::from("S 开局"), Line::from("↑/↓ 选牌 ...")];
             }
         }
         KeyCode::Backspace => {
-            app.name_buffer.pop();
+            match app.input_focus { InputFocus::Room => { app.room_input.pop(); } InputFocus::Name => { app.name_input.pop(); } }
         }
+        KeyCode::Left => {}
+        KeyCode::Right => {}
         KeyCode::Char(c) => {
-            if !c.is_control() && app.name_buffer.len() < 24 {
-                app.name_buffer.push(c);
+            if !c.is_control() {
+                match app.input_focus {
+                    InputFocus::Room => if app.room_input.len() < 24 { app.room_input.push(c); },
+                    InputFocus::Name => if app.name_input.len() < 24 { app.name_input.push(c); },
+                }
             }
         }
         _ => {}
@@ -644,17 +650,16 @@ fn handle_key_name_input(
     Ok(())
 }
 fn draw_name_input_popup(f: &mut ratatui::Frame<'_>, area: Rect, app: &AppState) {
-    let popup = centered_rect(50, 30, area);
+    let popup = centered_rect(60, 40, area);
     let mut lines: Vec<Line> = Vec::new();
-    lines.push(Line::from("请输入昵称 (Enter 确认 / Esc 取消)："));
-    let display = if app.name_buffer.is_empty() {
-        "<为空>".to_string()
-    } else {
-        app.name_buffer.clone()
-    };
-    lines.push(Line::from(display));
-    let block = Paragraph::new(Text::from(lines))
-        .block(Block::default().borders(Borders::ALL).title("加入游戏"));
+    lines.push(Line::from("输入房间与昵称 (Tab 切换, Enter 确认 / Esc 取消)"));
+    lines.push(Line::from(""));
+    let room_style = if matches!(app.input_focus, InputFocus::Room) { Style::default().fg(TColor::Yellow).add_modifier(Modifier::BOLD | Modifier::UNDERLINED) } else { Style::default().fg(TColor::White) };
+    let name_style = if matches!(app.input_focus, InputFocus::Name) { Style::default().fg(TColor::Yellow).add_modifier(Modifier::BOLD | Modifier::UNDERLINED) } else { Style::default().fg(TColor::White) };
+    lines.push(Line::from(vec![Span::styled("房间: ", Style::default().fg(TColor::Cyan)), Span::styled(if app.room_input.is_empty() { "<空>".into() } else { app.room_input.clone() }, room_style)]));
+    lines.push(Line::from(vec![Span::styled("昵称: ", Style::default().fg(TColor::Cyan)), Span::styled(if app.name_input.is_empty() { "<空>".into() } else { app.name_input.clone() }, name_style)]));
+    if let Some(r) = &app.room_id { lines.push(Line::from(format!("已加入房间: {}", r))); }
+    let block = Paragraph::new(Text::from(lines)).block(Block::default().borders(Borders::ALL).title("加入游戏"));
     f.render_widget(block, popup);
 }
 fn handle_key_scoreboard(
@@ -668,8 +673,11 @@ fn handle_key_scoreboard(
         }
         KeyCode::Char('n') => {
             if let Some(pid) = app.game_state.player_id {
-                tx.send(Client2Server::StartGame { player_id: pid }).ok();
-                app.push_log("请求再来一局");
+                tx.send(Client2Server::JoinGame { 
+                    room_id: app.room_id.clone().unwrap().to_string(),
+                    name: app.name_input.clone(),
+                } ).ok();
+                app.push_log(format!("{} 想再来一局", app.name_input));
             }
         }
         _ => {}

@@ -1,4 +1,4 @@
-use crate::game::cards::*;
+use crate::game::{cards::*, uno_game};
 use crate::game::player::Player;
 use crate::game::events::GameEvent as GE;
 
@@ -219,7 +219,8 @@ impl UnoGame {
         // 检查是否有玩家获胜,并切换到下一个玩家
         if self.players[player_id].display_hand().is_empty() {
             ev.push(GE::GameOver { winner: player_id, scores: self.calculate_scores() });
-            self.started = false; // 游戏结束，重置状态
+            self.started = false; // 标记结束，防止再接受动作
+            return ev;
         }
         
         // 检查玩家是否需要叫UNO, 并进行惩罚

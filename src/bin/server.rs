@@ -149,7 +149,7 @@ fn handle_message(
     conn_index: usize,
 ) {
     match msg {
-        Client2Server::JoinGame { name } => {
+        Client2Server::JoinGame { room_id: _room_id,name } => {
             {
                 // 已开始校验
                 let st = state.lock().unwrap();
@@ -246,7 +246,13 @@ fn handle_message(
                     hand: st.game.get_player_hand(player_id),
                 });
             }
+            let game_over = events.iter().any(|e| matches!(e, GE::GameOver { .. }));
             bus.publish(events);
+            if game_over {
+                // 重置内部 UnoGame，只保留玩家名单，允许下一次 StartGame 重新开局
+                let mut st = state.lock().unwrap();
+                st.game = UnoGame::new();
+            }
         }
         Client2Server::DrawCard { player_id, count } => {
             {
