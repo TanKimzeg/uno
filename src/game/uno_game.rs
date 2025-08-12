@@ -8,6 +8,7 @@ pub struct UnoGame {
     pub current_player: usize,
     pub top_card: Option<UnoCard>,
     pub direction: bool, // true for clockwise, false for counter-clockwise
+    pub started: bool,
 }
 
 impl UnoGame {
@@ -20,6 +21,7 @@ impl UnoGame {
             top_card: None,
             direction: true,
             current_player: 0,
+            started: false,
         }
     }
 
@@ -39,6 +41,10 @@ impl UnoGame {
 
     pub fn init_game(&mut self, players: Vec<String>) -> Vec<GE>{
         let mut ev = Vec::new();
+        if self.started {
+            ev.push(GE::GameError { message: "Game already started!".to_string() });
+            return ev;
+        }
         self.add_players(players, &mut ev);
         // Distribute initial cards to players
         for i in 0..self.players.len() {
@@ -62,6 +68,8 @@ impl UnoGame {
                 break;
             }
         }
+        self.started = true;
+        ev.push(GE::GameStarted { game_id: 0 }); // 这里可以设置一个实际的游戏ID
         ev
     }
 
@@ -124,7 +132,6 @@ impl UnoGame {
         }
     }
 
-    // 有人获胜:true, 否则false
     pub fn play_card(
         &mut self, 
         player_id: usize,
@@ -211,7 +218,8 @@ impl UnoGame {
 
         // 检查是否有玩家获胜,并切换到下一个玩家
         if self.players[player_id].display_hand().is_empty() {
-            ev.push(GE::GameOver { winner: player_id, scores: self.calculate_scores() })
+            ev.push(GE::GameOver { winner: player_id, scores: self.calculate_scores() });
+            self.started = false; // 游戏结束，重置状态
         }
         
         // 检查玩家是否需要叫UNO, 并进行惩罚

@@ -15,7 +15,6 @@ type ClientRx = mpsc::Receiver<Server2Client>;
 struct SharedState {
     game: UnoGame,
     players: Vec<String>, 
-    started: bool,
     // game_id: String, 
     clients: Vec<ClientTx>, // 广播通道
 }
@@ -67,7 +66,6 @@ fn main() {
     let state = Arc::new(Mutex::new(SharedState {
         game: UnoGame::new(),
         players: Vec::new(),
-        started: false,
         // game_id: gen_id(10),
         clients: Vec::new(),
     }));
@@ -145,7 +143,7 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
             // 生成欢迎与可能的开局事件（注意先释放锁再 publish）
             {
                 let st = state.lock().unwrap();
-                if st.started {
+                if st.game.started {
                     let _ = my_tx.send(Server2Client::ServerError {
                         message: "Game already started".into(),
                     });
@@ -173,7 +171,7 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
             }
             {
                 let st = state.lock().unwrap();
-                if st.started {
+                if st.game.started {
                     let _ = my_tx.send(Server2Client::ServerError {
                         message: "Game already started".into(),
                     });
@@ -186,13 +184,20 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
             let ev = {
                 let mut st = state.lock().unwrap();
                 let players = st.players.clone();
-                st.started = true;
                 st.game.init_game(players)
             };
             bus.publish(ev);
         }
 
         Client2Server::PlayCard { player_id, card_index, color, call_uno } => {
+            {
+                let st = state.lock().unwrap();
+                if !st.game.started {
+                    let _ = my_tx.send(Server2Client::ServerError { message: 
+                        "Game not started yet".into(),
+                    });
+                }
+            }
             if !is_pid_valid(state, player_id) {
                 let _ = my_tx.send(Server2Client::ServerError {
                     message: "Invalid player ID".into(),
@@ -212,6 +217,14 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
         }
 
         Client2Server::DrawCard { player_id, count } => {
+            {
+                let st = state.lock().unwrap();
+                if !st.game.started {
+                    let _ = my_tx.send(Server2Client::ServerError { message: 
+                        "Game not started yet".into(),
+                    });
+                }
+            }
             if !is_pid_valid(state, player_id) {
                 let _ = my_tx.send(Server2Client::ServerError {
                     message: "Invalid player ID".into(),
@@ -229,6 +242,14 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
         }
 
         Client2Server::PassTurn { player_id } => {
+            {
+                let st = state.lock().unwrap();
+                if !st.game.started {
+                    let _ = my_tx.send(Server2Client::ServerError { message: 
+                        "Game not started yet".into(),
+                    });
+                }
+            }
             if !is_pid_valid(state, player_id) {
                 let _ = my_tx.send(Server2Client::ServerError {
                     message: "Invalid player ID".into(),
