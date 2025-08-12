@@ -10,9 +10,13 @@ pub enum Server2Client {
     },
     SharedState {
         players_cards_count: Vec<(String, usize)>, // (name, cards_count)
-        top_card: Option<crate::game::cards::UnoCard>,
+        top_card: Option<UnoCard>,
         current_player: usize,
         clockwise: bool,
+    },
+    PlayerState {
+        player_id: usize,
+        hand: Vec<UnoCard>,
     },
     
     GameStarted {

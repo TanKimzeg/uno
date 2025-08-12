@@ -23,6 +23,14 @@ impl UnoGame {
         }
     }
 
+    pub fn get_player_hand(&self, player_id: usize) -> Vec<UnoCard> {
+        if let Some(player) = self.players.get(player_id) {
+            player.display_hand().clone()
+        } else {
+            Vec::new()
+        }
+    }
+
     pub fn get_players_cards_count(&self) -> Vec<(String, usize)> {
         self.players.iter()
             .map(|p| (p.name.clone(), p.display_hand().len()))

@@ -48,8 +48,12 @@ impl EventHandler for BroadcastHandler {
             current_player: st.game.current_player,
             clockwise: st.game.direction,
         };
-        for tx in &st.clients {
-            let _ = tx.send(shared_state.clone());
+        for (idx, cl) in st.clients.iter().enumerate() {
+            let _ = cl.send(
+                Server2Client::PlayerState { player_id: idx, 
+                    hand: st.game.get_player_hand(idx) }
+            );
+            let _ = cl.send(shared_state.clone());
         }
     }
 }
@@ -157,14 +161,16 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
                 welcome
             };
 
-            // welcome 回给自己
             let _ = my_tx.send(welcome);
         }
 
         Client2Server::StartGame { player_id } => {
-            let _ = my_tx.send(Server2Client::ServerError {
-                message: format!("{} starts the game!", player_id).into(),
-            });
+            if !is_pid_valid(state, player_id) {
+                let _ = my_tx.send(Server2Client::ServerError {
+                    message: "Invalid player ID".into(),
+                });
+                return;
+            }
             {
                 let st = state.lock().unwrap();
                 if st.started {
@@ -174,6 +180,9 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
                     return;
                 }
             }
+            let _ = my_tx.send(Server2Client::ServerError {
+                message: format!("You start the game!").into(),
+            });
             let ev = {
                 let mut st = state.lock().unwrap();
                 let players = st.players.clone();
@@ -184,14 +193,31 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
         }
 
         Client2Server::PlayCard { player_id, card_index, color, call_uno } => {
+            if !is_pid_valid(state, player_id) {
+                let _ = my_tx.send(Server2Client::ServerError {
+                    message: "Invalid player ID".into(),
+                });
+                return;
+            }
             let events = {
                 let mut st = state.lock().unwrap();
                 st.game.play_card(player_id, card_index, call_uno, color)
             };
+            {
+                let st = state.lock().unwrap();
+                let _ = my_tx.send(Server2Client::PlayerState { player_id, 
+                    hand: st.game.get_player_hand(player_id) });
+            }
             bus.publish(events);
         }
 
         Client2Server::DrawCard { player_id, count } => {
+            if !is_pid_valid(state, player_id) {
+                let _ = my_tx.send(Server2Client::ServerError {
+                    message: "Invalid player ID".into(),
+                });
+                return;
+            }
             let n = count.max(1);
             for _ in 0..n {
                 let ev = {
@@ -203,6 +229,12 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
         }
 
         Client2Server::PassTurn { player_id } => {
+            if !is_pid_valid(state, player_id) {
+                let _ = my_tx.send(Server2Client::ServerError {
+                    message: "Invalid player ID".into(),
+                });
+                return;
+            }
             let ev = {
                 let mut st = state.lock().unwrap();
                 st.game.player_pass(player_id)
@@ -217,6 +249,12 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
         }
 
         Client2Server::LeaveGame { player_id } => {
+            if !is_pid_valid(state, player_id) {
+                let _ = my_tx.send(Server2Client::ServerError {
+                    message: "Invalid player ID".into(),
+                });
+                return;
+            }
             let mut st = state.lock().unwrap();
             if player_id >= st.players.len() {
                 let _ = my_tx.send(Server2Client::ServerError {
@@ -228,6 +266,12 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
             st.clients.remove(player_id);
         }
     }
+}
+
+/// 检查player_id是否有效
+fn is_pid_valid(state: &Arc<Mutex<SharedState>>, player_id: usize) -> bool {
+    let st = state.lock().unwrap();
+    player_id < st.players.len()
 }
 
 /// 生成随机字符串 ID, 用于游戏 ID 或会话 ID

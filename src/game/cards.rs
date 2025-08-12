@@ -273,8 +273,8 @@ pub enum WildType {
 impl Display for WildType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            WildType::WILD => write!(f, "{:>7}", "WILD")?,
-            WildType::DRAWFOUR => write!(f, "{:>7}", "DRAWFOUR")?,
+            WildType::WILD => write!(f, "{:<7}", "WILD")?,
+            WildType::DRAWFOUR => write!(f, "{:<7}", "DRAWFOUR")?,
         }
         Ok(())
     }
