@@ -1,22 +1,22 @@
+use rand::{distributions::Alphanumeric, Rng};
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use rand::{distributions::Alphanumeric, Rng};
 
-use uno::game::UnoGame;
 use uno::game::events::GameEvent as GE;
+use uno::game::UnoGame;
+use uno::ports::bus::{ConsolerLogger, EventBus, EventHandler};
 use uno::protocol::{Client2Server, Server2Client};
-use uno::ports::bus::{EventBus, EventHandler, ConsolerLogger };
 
 type ClientTx = mpsc::Sender<Server2Client>;
 type ClientRx = mpsc::Receiver<Server2Client>;
 
 struct SharedState {
     game: UnoGame,
-    players: Vec<String>, 
-    // game_id: String, 
-    clients: Vec<ClientTx>, // 广播通道
+    players: Vec<String>,
+    // game_id: String,
+    clients: Vec<(ClientTx, Option<usize>)>, // 广播通道
 }
 
 // 网络广播处理器：把每个 GameEvent 发送给所有客户端
@@ -29,29 +29,27 @@ impl EventHandler for BroadcastHandler {
         let msg = Server2Client::Events(events.to_vec());
         let mut dead = Vec::new();
         let mut st = self.state.lock().unwrap();
-        for (i, tx) in st.clients.iter().enumerate() {
+        for (i, (tx, _pid)) in st.clients.iter().enumerate() {
             if tx.send(msg.clone()).is_err() {
                 dead.push(i);
             }
         }
-        // 清理断开的连接
         for i in dead.into_iter().rev() {
-            eprintln!("Client {} disconnected, removing from broadcast list", i);
             st.clients.remove(i);
         }
-
-        // 广播全局共享信息
         let shared_state = Server2Client::SharedState {
             players_cards_count: st.game.get_players_cards_count(),
             top_card: st.game.top_card,
             current_player: st.game.current_player,
             clockwise: st.game.direction,
         };
-        for (idx, cl) in st.clients.iter().enumerate() {
-            let _ = cl.send(
-                Server2Client::PlayerState { player_id: idx, 
-                    hand: st.game.get_player_hand(idx) }
-            );
+        for (cl, pid_opt) in st.clients.iter() {
+            if let Some(pid) = pid_opt {
+                let _ = cl.send(Server2Client::PlayerState {
+                    player_id: *pid,
+                    hand: st.game.get_player_hand(*pid),
+                });
+            }
             let _ = cl.send(shared_state.clone());
         }
     }
@@ -72,7 +70,9 @@ fn main() {
 
     // 事件总线：注册网络广播处理器
     let mut bus = EventBus::new();
-    bus.register_handler(Box::new(BroadcastHandler { state: state.clone() }));
+    bus.register_handler(Box::new(BroadcastHandler {
+        state: state.clone(),
+    }));
     // 注册控制台日志处理器
     bus.register_handler(Box::new(ConsolerLogger {}));
     let bus = Arc::new(bus); // 只读共享，后续不再注册新处理器
@@ -80,22 +80,20 @@ fn main() {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                let state = state.clone();
-                let bus = bus.clone();
-
-                // 每个客户端一个发送队列（服务器→客户端）
+                let state_clone = state.clone();
+                let bus_clone = bus.clone();
                 let (tx, rx): (ClientTx, ClientRx) = mpsc::channel();
-                {
-                    let mut st = state.lock().unwrap();
-                    st.clients.push(tx.clone());
-                }
-
+                // 插入到clients并记录本连接索引
+                let conn_index = {
+                    let mut st = state_clone.lock().unwrap();
+                    st.clients.push((tx.clone(), None));
+                    st.clients.len() - 1
+                };
                 // 写线程
                 let mut write_stream = stream.try_clone().expect("clone stream failed");
                 thread::spawn(move || writer_loop(&mut write_stream, rx));
-
-                // 读线程
-                thread::spawn(move || reader_loop(stream, state, bus, tx));
+                // 读线程（带 conn_index）
+                thread::spawn(move || reader_loop(stream, state_clone, bus_clone, tx, conn_index));
             }
             Err(e) => eprintln!("accept error: {}", e),
         }
@@ -114,7 +112,13 @@ fn writer_loop(stream: &mut TcpStream, rx: ClientRx) {
     }
 }
 
-fn reader_loop(stream: TcpStream, state: Arc<Mutex<SharedState>>, bus: Arc<EventBus>, my_tx: ClientTx) {
+fn reader_loop(
+    stream: TcpStream,
+    state: Arc<Mutex<SharedState>>,
+    bus: Arc<EventBus>,
+    my_tx: ClientTx,
+    conn_index: usize,
+) {
     let peer = stream.peer_addr().ok();
     let reader = BufReader::new(stream);
     for line in reader.lines() {
@@ -127,7 +131,7 @@ fn reader_loop(stream: TcpStream, state: Arc<Mutex<SharedState>>, bus: Arc<Event
         };
         let msg: Result<Client2Server, _> = serde_json::from_str(&line);
         match msg {
-            Ok(m) => handle_message(&state, &bus, &my_tx, m),
+            Ok(m) => handle_message(&state, &bus, &my_tx, m, conn_index),
             Err(e) => {
                 let _ = my_tx.send(Server2Client::ServerError {
                     message: format!("bad json: {}", e),
@@ -137,11 +141,17 @@ fn reader_loop(stream: TcpStream, state: Arc<Mutex<SharedState>>, bus: Arc<Event
     }
 }
 
-fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &ClientTx, msg: Client2Server) {
+fn handle_message(
+    state: &Arc<Mutex<SharedState>>,
+    bus: &Arc<EventBus>,
+    my_tx: &ClientTx,
+    msg: Client2Server,
+    conn_index: usize,
+) {
     match msg {
         Client2Server::JoinGame { name } => {
-            // 生成欢迎与可能的开局事件（注意先释放锁再 publish）
             {
+                // 已开始校验
                 let st = state.lock().unwrap();
                 if st.game.started {
                     let _ = my_tx.send(Server2Client::ServerError {
@@ -152,20 +162,30 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
             }
             let welcome = {
                 let mut st = state.lock().unwrap();
+                // 已加入则拒绝
+                if let Some((_tx, Some(_))) = st.clients.get(conn_index) {
+                    let _ = my_tx.send(Server2Client::ServerError {
+                        message: "Already joined".into(),
+                    });
+                    return;
+                }
                 let player_id = st.players.len();
                 st.players.push(name.clone());
+                if let Some((_tx, pid_slot)) = st.clients.get_mut(conn_index) {
+                    *pid_slot = Some(player_id);
+                }
                 let session_id = gen_id(12);
-                let welcome = Server2Client::Welcome { player_id, session_id };
-                welcome
+                Server2Client::Welcome {
+                    player_id,
+                    session_id,
+                }
             };
-
             let _ = my_tx.send(welcome);
         }
-
         Client2Server::StartGame { player_id } => {
-            if !is_pid_valid(state, player_id) {
+            if !connection_claim_matches(state, conn_index, player_id) {
                 let _ = my_tx.send(Server2Client::ServerError {
-                    message: "Invalid player ID".into(),
+                    message: "Player ID mismatch or not joined".into(),
                 });
                 return;
             }
@@ -188,19 +208,30 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
             };
             bus.publish(ev);
         }
-
-        Client2Server::PlayCard { player_id, card_index, color, call_uno } => {
+        Client2Server::PlayCard {
+            player_id,
+            card_index,
+            color,
+            call_uno,
+        } => {
             {
                 let st = state.lock().unwrap();
                 if !st.game.started {
-                    let _ = my_tx.send(Server2Client::ServerError { message: 
-                        "Game not started yet".into(),
+                    let _ = my_tx.send(Server2Client::ServerError {
+                        message: "Game not started yet".into(),
                     });
+                    return;
+                }
+                if player_id != st.game.current_player {
+                    let _ = my_tx.send(Server2Client::ServerError {
+                        message: "Not your turn".into(),
+                    });
+                    return;
                 }
             }
-            if !is_pid_valid(state, player_id) {
+            if !connection_claim_matches(state, conn_index, player_id) {
                 let _ = my_tx.send(Server2Client::ServerError {
-                    message: "Invalid player ID".into(),
+                    message: "Player ID mismatch or not joined".into(),
                 });
                 return;
             }
@@ -210,24 +241,25 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
             };
             {
                 let st = state.lock().unwrap();
-                let _ = my_tx.send(Server2Client::PlayerState { player_id, 
-                    hand: st.game.get_player_hand(player_id) });
+                let _ = my_tx.send(Server2Client::PlayerState {
+                    player_id,
+                    hand: st.game.get_player_hand(player_id),
+                });
             }
             bus.publish(events);
         }
-
         Client2Server::DrawCard { player_id, count } => {
             {
                 let st = state.lock().unwrap();
                 if !st.game.started {
-                    let _ = my_tx.send(Server2Client::ServerError { message: 
-                        "Game not started yet".into(),
+                    let _ = my_tx.send(Server2Client::ServerError {
+                        message: "Game not started yet".into(),
                     });
                 }
             }
-            if !is_pid_valid(state, player_id) {
+            if !connection_claim_matches(state, conn_index, player_id) {
                 let _ = my_tx.send(Server2Client::ServerError {
-                    message: "Invalid player ID".into(),
+                    message: "Player ID mismatch or not joined".into(),
                 });
                 return;
             }
@@ -240,19 +272,18 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
                 bus.publish(ev);
             }
         }
-
         Client2Server::PassTurn { player_id } => {
             {
                 let st = state.lock().unwrap();
                 if !st.game.started {
-                    let _ = my_tx.send(Server2Client::ServerError { message: 
-                        "Game not started yet".into(),
+                    let _ = my_tx.send(Server2Client::ServerError {
+                        message: "Game not started yet".into(),
                     });
                 }
             }
-            if !is_pid_valid(state, player_id) {
+            if !connection_claim_matches(state, conn_index, player_id) {
                 let _ = my_tx.send(Server2Client::ServerError {
-                    message: "Invalid player ID".into(),
+                    message: "Player ID mismatch or not joined".into(),
                 });
                 return;
             }
@@ -262,17 +293,15 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
             };
             bus.publish(ev);
         }
-
         Client2Server::ChallengeWildDrawFour { .. } => {
             let _ = my_tx.send(Server2Client::ServerError {
                 message: "Challenge (+4) 尚未实现".into(),
             });
         }
-
         Client2Server::LeaveGame { player_id } => {
-            if !is_pid_valid(state, player_id) {
+            if !connection_claim_matches(state, conn_index, player_id) {
                 let _ = my_tx.send(Server2Client::ServerError {
-                    message: "Invalid player ID".into(),
+                    message: "Player ID mismatch or not joined".into(),
                 });
                 return;
             }
@@ -284,15 +313,12 @@ fn handle_message(state: &Arc<Mutex<SharedState>>, bus: &Arc<EventBus>, my_tx: &
                 return;
             }
             st.players.remove(player_id);
-            st.clients.remove(player_id);
+            // 不立即移除clients以免打乱索引，可标记None
+            if let Some((_tx, pid_slot)) = st.clients.get_mut(conn_index) {
+                *pid_slot = None;
+            }
         }
     }
-}
-
-/// 检查player_id是否有效
-fn is_pid_valid(state: &Arc<Mutex<SharedState>>, player_id: usize) -> bool {
-    let st = state.lock().unwrap();
-    player_id < st.players.len()
 }
 
 /// 生成随机字符串 ID, 用于游戏 ID 或会话 ID
@@ -303,4 +329,17 @@ fn gen_id(len: usize) -> String {
         .take(len)
         .map(char::from)
         .collect()
+}
+
+fn connection_claim_matches(
+    state: &Arc<Mutex<SharedState>>,
+    conn_index: usize,
+    claimed: usize,
+) -> bool {
+    let st = state.lock().unwrap();
+    if let Some((_, Some(pid))) = st.clients.get(conn_index) {
+        *pid == claimed
+    } else {
+        false
+    }
 }

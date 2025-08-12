@@ -141,11 +141,11 @@ impl UnoGame {
     ) -> Vec<GE> {
         let mut ev = Vec::new();
 
-        // 校验玩家
-        if self.players.get(self.current_player).map(|p| p.id) != Some(player_id) {
-            ev.push(GE::GameError { message: "It's not your turn!".to_string() });
-            return ev;
-        }
+        // 校验玩家, 已在服务端校验
+        // if self.players.get(self.current_player).map(|p| p.id) != Some(player_id) {
+        //     ev.push(GE::GameError { message: format!("It's not Player {}'s turn!", player_id).to_string() });
+        //     return ev;
+        // }
 
         let hand = self.players[self.current_player].display_hand();
         if card_idx >= hand.len() {
