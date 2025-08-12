@@ -46,7 +46,7 @@ pub struct ConsolerLogger;
 impl EventHandler for ConsolerLogger {
     fn handle_events(&self, events: &[GameEvent]) {
         for event in events {
-            eprintln!("[ConsoleLogger] Event: {:?}", event);
+            eprintln!("[ConsoleLogger] Event: {}", event);
         }
     }
 }

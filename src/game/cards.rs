@@ -1,8 +1,8 @@
-use colored::Colorize;
+// use colored::Colorize;
 use std::fmt::Display;
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum UnoCard {
     NumberCard(Color, Number),
     ActionCard(Color, Action),
@@ -50,13 +50,13 @@ impl Display for UnoCard {
                 number.to_string()
             )?,
             UnoCard::ActionCard(color, action) => {
-                write!(f, "Action Card: {} {:?}", color.to_string(), action)?
+                write!(f, "Action Card: {} {}", color.to_string(), action.to_string())?
             }
             UnoCard::WildCard(color, wild_type) => {
                 if let Some(c) = color {
-                    write!(f, "  Wild Card: {:} {:?}", c.to_string(), wild_type)?
+                    write!(f, "  Wild Card: {} {}", c.to_string(), wild_type.to_string())?
                 } else {
-                    write!(f, "  Wild Card: {:>6?}", wild_type)?
+                    write!(f, "  Wild Card: {}", wild_type.to_string())?
                 }
             }
         }
@@ -142,10 +142,14 @@ impl Color {
 impl Display for Color {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Color::RED => write!(f, "{}", "   RED".red())?,
-            Color::GREEN => write!(f, "{}", " GREEN".green())?,
-            Color::BLUE => write!(f, "{}", "  BLUE".blue())?,
-            Color::YELLOW => write!(f, "{}", "YELLOW".yellow())?,
+            // Color::RED => write!(f, "{:>6}", "RED".red())?,
+            // Color::GREEN => write!(f, "{:>6}", "GREEN".green())?,
+            // Color::BLUE => write!(f, "{:>6}", "BLUE".blue())?,
+            // Color::YELLOW => write!(f, "{:>6}", "YELLOW".yellow())?,
+            Color::RED => write!(f, "{:>6}", "RED")?,
+            Color::GREEN => write!(f, "{:>6}", "GREEN")?,
+            Color::BLUE => write!(f, "{:>6}", "BLUE")?,
+            Color::YELLOW => write!(f, "{:>6}", "YELLOW")?,
         }
         Ok(())
     }
@@ -201,16 +205,26 @@ impl Number {
 impl Display for Number {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Number::ZERO => write!(f, "{}", "0".white())?,
-            Number::ONE => write!(f, "{}", "1".bright_blue())?,
-            Number::TWO => write!(f, "{}", "2".bright_green())?,
-            Number::THREE => write!(f, "{}", "3".bright_red())?,
-            Number::FOUR => write!(f, "{}", "4".bright_yellow())?,
-            Number::FIVE => write!(f, "{}", "5".bright_cyan())?,
-            Number::SIX => write!(f, "{}", "6".bright_magenta())?,
-            Number::SEVEN => write!(f, "{}", "7".blue())?,
-            Number::EIGHT => write!(f, "{}", "8".green())?,
-            Number::NINE => write!(f, "{}", "9".red())?,
+            // Number::ZERO => write!(f, "{}", "0".white())?,
+            // Number::ONE => write!(f, "{}", "1".bright_blue())?,
+            // Number::TWO => write!(f, "{}", "2".bright_green())?,
+            // Number::THREE => write!(f, "{}", "3".bright_red())?,
+            // Number::FOUR => write!(f, "{}", "4".bright_yellow())?,
+            // Number::FIVE => write!(f, "{}", "5".bright_cyan())?,
+            // Number::SIX => write!(f, "{}", "6".bright_magenta())?,
+            // Number::SEVEN => write!(f, "{}", "7".blue())?,
+            // Number::EIGHT => write!(f, "{}", "8".green())?,
+            // Number::NINE => write!(f, "{}", "9".red())?,
+            Number::ZERO => write!(f, "{}", "0")?,
+            Number::ONE => write!(f, "{}", "1")?,
+            Number::TWO => write!(f, "{}", "2")?,
+            Number::THREE => write!(f, "{}", "3")?,
+            Number::FOUR => write!(f, "{}", "4")?,
+            Number::FIVE => write!(f, "{}", "5")?,
+            Number::SIX => write!(f, "{}", "6")?,
+            Number::SEVEN => write!(f, "{}", "7")?,
+            Number::EIGHT => write!(f, "{}", "8")?,
+            Number::NINE => write!(f, "{}", "9")?,
         }
         Ok(())
     }
@@ -233,15 +247,38 @@ pub enum Action {
     DRAWTWO,
 }
 
+impl Display for Action {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Action::SKIP => write!(f, "{:<7}", "SKIP")?,
+            Action::REVERSE => write!(f, "{:<7}", "REVERSE")?,
+            Action::DRAWTWO => write!(f, "{:<7}", "DRAWTWO")?,
+        }
+        Ok(())
+    }
+    
+}
+
 pub struct WildCard {
     pub color: Option<Color>,
     pub wild_type: WildType,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum WildType {
     WILD,
     DRAWFOUR,
+}
+
+impl Display for WildType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WildType::WILD => write!(f, "{:>7}", "WILD")?,
+            WildType::DRAWFOUR => write!(f, "{:>7}", "DRAWFOUR")?,
+        }
+        Ok(())
+    }
+    
 }
 
 pub struct UnoDeck {

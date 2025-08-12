@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
-use crate::game::events::GameEvent;
+use crate::game::{events::GameEvent, UnoCard};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum Server2Client {
     Welcome {
