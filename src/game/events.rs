@@ -94,7 +94,7 @@ impl Display for GameEvent {
                 player_id, card } => 
                 write!(f, "CardDraw: id={}, card={}", player_id, card.to_string())?,
             GameEvent::DrawnCardPlayable { 
-                player_id } => 
+                player_id, .. } => 
                 write!(f, "DrawnCardPlayable: id={}", player_id)?,
             GameEvent::PlayerPassed { 
                 player_id } => 

@@ -253,7 +253,9 @@ impl UnoGame {
                 self.players[self.current_player].push_card(drawn_card.clone());
                 ev.push(GE::CardDraw { player_id, card: drawn_card });
                 if valid_card(&drawn_card, &self.top_card) {
-                    ev.push(GE::DrawnCardPlayable { player_id: player_id });
+                    ev.push(GE::DrawnCardPlayable { 
+                        player_id: player_id,
+                    });
                 }
                 else {
                     ev.extend(self.player_pass(player_id));

@@ -673,10 +673,7 @@ fn handle_key_scoreboard(
         }
         KeyCode::Char('n') => {
             if let Some(pid) = app.game_state.player_id {
-                tx.send(Client2Server::JoinGame { 
-                    room_id: app.room_id.clone().unwrap().to_string(),
-                    name: app.name_input.clone(),
-                } ).ok();
+                tx.send(Client2Server::StartGame { player_id: pid }).ok();
                 app.push_log(format!("{} 想再来一局", app.name_input));
             }
         }
@@ -764,13 +761,15 @@ fn handle_events(app: &mut AppState, events: &[GE], _tx: &Sender<Client2Server>)
                 if Some(*player_id) == app.game_state.player_id {
                     app.push_log(format!("You drew: {}", card.to_string()));
                 } else {
-                    app.push_log(format!("Player {} drew", player_id));
+                    app.push_log(format!("Player {} drew a card", player_id));
                 }
             }
             GE::DrawnCardPlayable { player_id } => {
                 if Some(*player_id) == app.game_state.player_id {
                     if !app.game_state.hand.is_empty() {
-                        let idx = app.game_state.hand.len() - 1;
+                        let idx = app.game_state.hand.len();
+                        // 由于服务端先发DrawnCardPlayable,再发PlayerState,所以此时手牌数已经+1,
+                        // 正常用户的手速也不会快到在这之间出牌引发panic...
                         app.mode = UiMode::DrawnCardPlayable { card_index: idx };
                         app.push_log("你刚摸的牌可立即出");
                     }
