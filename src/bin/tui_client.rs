@@ -178,7 +178,7 @@ fn main() -> io::Result<()> {
     let mut app = AppState::default();
     app.input_hint.push(Line::from("J 加入"));
     app.push_log(format!("连接到 {}，按 J 加入游戏", addr));
-    let tick_rate = Duration::from_millis(500);
+    let tick_rate = Duration::from_millis(100);
     let mut last_tick = Instant::now();
     let mut quit = false;
     while !quit {
@@ -769,6 +769,7 @@ fn handle_events(app: &mut AppState, events: &[GE], _tx: &Sender<Client2Server>)
                     if !app.game_state.hand.is_empty() {
                         let idx = app.game_state.hand.len();
                         // 由于服务端先发DrawnCardPlayable,再发PlayerState,所以此时手牌数已经+1,
+                        // 而且TUI渲染出来隔了大约0.1s,
                         // 正常用户的手速也不会快到在这之间出牌引发panic...
                         app.mode = UiMode::DrawnCardPlayable { card_index: idx };
                         app.push_log("你刚摸的牌可立即出");
