@@ -1,4 +1,4 @@
-use crate::game::cards::*;
+use crate::game::{cards::*, uno_game};
 use crate::game::player::Player;
 use crate::game::events::GameEvent as GE;
 
@@ -8,6 +8,7 @@ pub struct UnoGame {
     pub current_player: usize,
     pub top_card: Option<UnoCard>,
     pub direction: bool, // true for clockwise, false for counter-clockwise
+    pub started: bool,
 }
 
 impl UnoGame {
@@ -20,6 +21,7 @@ impl UnoGame {
             top_card: None,
             direction: true,
             current_player: 0,
+            started: false,
         }
     }
 
@@ -39,6 +41,10 @@ impl UnoGame {
 
     pub fn init_game(&mut self, players: Vec<String>) -> Vec<GE>{
         let mut ev = Vec::new();
+        if self.started {
+            ev.push(GE::GameError { message: "Game already started!".to_string() });
+            return ev;
+        }
         self.add_players(players, &mut ev);
         // Distribute initial cards to players
         for i in 0..self.players.len() {
@@ -62,6 +68,8 @@ impl UnoGame {
                 break;
             }
         }
+        self.started = true;
+        ev.push(GE::GameStarted { game_id: 0 }); // 这里可以设置一个实际的游戏ID
         ev
     }
 
@@ -124,7 +132,6 @@ impl UnoGame {
         }
     }
 
-    // 有人获胜:true, 否则false
     pub fn play_card(
         &mut self, 
         player_id: usize,
@@ -134,11 +141,11 @@ impl UnoGame {
     ) -> Vec<GE> {
         let mut ev = Vec::new();
 
-        // 校验玩家
-        if self.players.get(self.current_player).map(|p| p.id) != Some(player_id) {
-            ev.push(GE::GameError { message: "It's not your turn!".to_string() });
-            return ev;
-        }
+        // 校验玩家, 已在服务端校验
+        // if self.players.get(self.current_player).map(|p| p.id) != Some(player_id) {
+        //     ev.push(GE::GameError { message: format!("It's not Player {}'s turn!", player_id).to_string() });
+        //     return ev;
+        // }
 
         let hand = self.players[self.current_player].display_hand();
         if card_idx >= hand.len() {
@@ -211,7 +218,9 @@ impl UnoGame {
 
         // 检查是否有玩家获胜,并切换到下一个玩家
         if self.players[player_id].display_hand().is_empty() {
-            ev.push(GE::GameOver { winner: player_id, scores: self.calculate_scores() })
+            ev.push(GE::GameOver { winner: player_id, scores: self.calculate_scores() });
+            self.started = false; // 标记结束，防止再接受动作
+            return ev;
         }
         
         // 检查玩家是否需要叫UNO, 并进行惩罚

@@ -21,9 +21,9 @@ mod card_tests {
         let card2 = UnoCard::ActionCard(Color::RED, Action::SKIP);
         let card3 = UnoCard::WildCard(Some(Color::BLUE), WildType::WILD);
 
-        assert!(valid_card(&card1, Some(&top_card)));
-        assert!(valid_card(&card2, Some(&top_card)));
-        assert!(valid_card(&card3, Some(&top_card)));
-        assert!(valid_card(&card1, None));
+        assert!(valid_card(&card1, &Some(top_card)));
+        assert!(valid_card(&card2, &Some(top_card)));
+        assert!(valid_card(&card3, &Some(top_card)));
+        assert!(valid_card(&card1, &None));
     }
 }

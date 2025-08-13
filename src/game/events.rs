@@ -9,6 +9,9 @@ pub enum GameEvent {
         player_id: usize,
         name: String,
     },
+    GameStarted {
+        game_id: usize,
+    },
 
     CardPlayed {
         player_id: usize,
@@ -81,6 +84,9 @@ impl Display for GameEvent {
             GameEvent::PlayerJoined { 
                 player_id, name } => 
                 write!(f, "PlayerJoined: id={}, name={}", player_id, name)?,
+            GameEvent::GameStarted { 
+                game_id } => 
+                write!(f, "GameStarted: game_id={}", game_id)?,
             GameEvent::CardPlayed { 
                 player_id, card } => 
                 write!(f, "CardPlayed: id={}, card={}", player_id, card.to_string())?,

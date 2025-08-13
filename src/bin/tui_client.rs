@@ -17,7 +17,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color as TColor, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Paragraph}, 
+    widgets::{Block, Borders, Paragraph},
     Terminal,
 };
 
@@ -27,8 +27,7 @@ use uno::protocol::{Client2Server, Server2Client};
 
 // ---------------- 状态定义 ----------------
 #[derive(Default, Clone)]
-struct AppState {
-    connected: bool,
+struct GameState {
     player_id: Option<usize>,
     session_id: Option<String>,
     players_cards_count: Vec<(String, usize)>,
@@ -36,14 +35,23 @@ struct AppState {
     current_player: usize,
     clockwise: bool,
     hand: Vec<UnoCard>,
+}
+#[derive(Default, Clone)]
+struct AppState {
+    connected: bool,
+    game_state: GameState,
     cursor: usize,
     log: Vec<String>,
-    input_hint: String,
+    input_hint: Vec<Line<'static>>,
     mode: UiMode,
     pending_action: Option<PendingPlay>,
     color_pick_index: usize,
+    room_input: String,
+    name_input: String,
+    input_focus: InputFocus,
+    scoreboard: Option<Vec<ScoreEntry>>,
+    room_id: Option<String>, // 新增: 当前房间ID
 }
-
 #[derive(Clone, Copy, Debug, Default)]
 enum UiMode {
     #[default]
@@ -52,12 +60,24 @@ enum UiMode {
     DrawnCardPlayable {
         card_index: usize,
     },
+    NameInput,
+    Scoreboard,
 }
 #[derive(Clone, Debug)]
 struct PendingPlay {
     card_index: usize,
     call_uno: bool,
 }
+#[derive(Clone, Debug)]
+struct ScoreEntry {
+    name: String,
+    score: i32,
+    rank: usize,
+    is_winner: bool,
+}
+#[derive(Clone, Copy, Debug)]
+enum InputFocus { Room, Name }
+impl Default for InputFocus { fn default() -> Self { InputFocus::Room } }
 
 impl AppState {
     fn push_log<S: Into<String>>(&mut self, s: S) {
@@ -156,9 +176,9 @@ fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     let mut app = AppState::default();
-    app.input_hint = "J 加入\nS 开局\n↑/↓ 选牌\nEnter 出牌\nD 摸牌\nP 跳过\nU UNO\nQ 退出".into();
+    app.input_hint.push(Line::from("J 加入"));
     app.push_log(format!("连接到 {}，按 J 加入游戏", addr));
-    let tick_rate = Duration::from_millis(50);
+    let tick_rate = Duration::from_millis(500);
     let mut last_tick = Instant::now();
     let mut quit = false;
     while !quit {
@@ -208,6 +228,8 @@ fn should_quit(key: KeyEvent, app: &mut AppState, tx: &Sender<Client2Server>) ->
         UiMode::DrawnCardPlayable { card_index } => {
             handle_key_drawn_playable(key, app, tx, card_index)?
         }
+        UiMode::NameInput => handle_key_name_input(key, app, tx)?,
+        UiMode::Scoreboard => handle_key_scoreboard(key, app, tx)?,
     };
     Ok(false)
 }
@@ -219,14 +241,15 @@ fn handle_key_normal(
 ) -> io::Result<()> {
     match key.code {
         KeyCode::Char('j') => {
-            let name = std::env::var("USERNAME")
-                .or_else(|_| std::env::var("USER"))
-                .unwrap_or_else(|_| "player".into());
-            tx.send(Client2Server::JoinGame { name }).ok();
-            app.push_log("发送 Join 请求");
+            app.mode = UiMode::NameInput;
+            app.room_input.clear();
+            app.name_input.clear();
+            app.input_focus = InputFocus::Room;
+            app.push_log("输入房间与昵称，Tab 切换，Enter 提交，Esc 取消");
+            app.input_hint = vec![Line::from("S 开局")];
         }
         KeyCode::Char('s') => {
-            if let Some(pid) = app.player_id {
+            if let Some(pid) = app.game_state.player_id {
                 tx.send(Client2Server::StartGame { player_id: pid }).ok();
             }
         }
@@ -239,7 +262,7 @@ fn handle_key_normal(
             app.cursor = app
                 .cursor
                 .saturating_add(1)
-                .min(app.hand.len().saturating_sub(1));
+                .min(app.game_state.hand.len().saturating_sub(1));
         }
         KeyCode::Enter => {
             try_play_selected(false, app, tx)?;
@@ -248,7 +271,7 @@ fn handle_key_normal(
             try_play_selected(true, app, tx)?;
         }
         KeyCode::Char('d') => {
-            if let Some(pid) = app.player_id {
+            if let Some(pid) = app.game_state.player_id {
                 tx.send(Client2Server::DrawCard {
                     player_id: pid,
                     count: 1,
@@ -257,7 +280,7 @@ fn handle_key_normal(
             }
         }
         KeyCode::Char('p') => {
-            if let Some(pid) = app.player_id {
+            if let Some(pid) = app.game_state.player_id {
                 tx.send(Client2Server::PassTurn { player_id: pid }).ok();
             }
         }
@@ -292,7 +315,7 @@ fn handle_key_colorpick(
         KeyCode::Char('y') => app.color_pick_index = 3,
         KeyCode::Enter => {
             if let Some(p) = app.pending_action.take() {
-                if let Some(pid) = app.player_id {
+                if let Some(pid) = app.game_state.player_id {
                     let color = match app.color_pick_index {
                         0 => UColor::RED,
                         1 => UColor::GREEN,
@@ -326,13 +349,13 @@ fn handle_key_drawn_playable(
             app.mode = UiMode::Normal;
         }
         KeyCode::Enter => {
-            if let Some(pid) = app.player_id {
+            if let Some(pid) = app.game_state.player_id {
                 play_card_with_color_resolution(app, tx, pid, card_index, false)?;
             }
             app.mode = UiMode::Normal;
         }
         KeyCode::Char('u') => {
-            if let Some(pid) = app.player_id {
+            if let Some(pid) = app.game_state.player_id {
                 play_card_with_color_resolution(app, tx, pid, card_index, true)?;
             }
             app.mode = UiMode::Normal;
@@ -347,8 +370,8 @@ fn try_play_selected(
     app: &mut AppState,
     tx: &Sender<Client2Server>,
 ) -> io::Result<()> {
-    if let Some(pid) = app.player_id {
-        if app.hand.get(app.cursor).is_some() {
+    if let Some(pid) = app.game_state.player_id {
+        if app.game_state.hand.get(app.cursor).is_some() {
             play_card_with_color_resolution(app, tx, pid, app.cursor, call_uno)?;
         }
     }
@@ -362,7 +385,7 @@ fn play_card_with_color_resolution(
     card_index: usize,
     call_uno: bool,
 ) -> io::Result<()> {
-    if let Some(card) = app.hand.get(card_index).copied() {
+    if let Some(card) = app.game_state.hand.get(card_index).copied() {
         match card {
             UnoCard::WildCard(Some(c), _) => {
                 tx.send(Client2Server::PlayCard {
@@ -428,13 +451,10 @@ fn handle_server_msg(app: &mut AppState, msg: Server2Client, tx: &Sender<Client2
             player_id,
             session_id,
         } => {
-            app.player_id = Some(player_id);
-            app.session_id = Some(session_id);
+            app.game_state.player_id = Some(player_id);
+            app.game_state.session_id = Some(session_id);
             app.connected = true;
             app.push_log(format!("Welcome! 你的 id 是 {}", player_id));
-        }
-        Server2Client::GameStarted { game_id, players } => {
-            app.push_log(format!("GameStarted {} players={:?}", game_id, players));
         }
         Server2Client::Events(ev) => {
             handle_events(app, &ev, tx);
@@ -446,16 +466,16 @@ fn handle_server_msg(app: &mut AppState, msg: Server2Client, tx: &Sender<Client2
             current_player,
             clockwise,
         } => {
-            app.players_cards_count = players_cards_count;
-            app.top_card = top_card;
-            app.current_player = current_player;
-            app.clockwise = clockwise;
+            app.game_state.players_cards_count = players_cards_count;
+            app.game_state.top_card = top_card;
+            app.game_state.current_player = current_player;
+            app.game_state.clockwise = clockwise;
         }
         Server2Client::PlayerState { player_id, hand } => {
-            if Some(player_id) == app.player_id {
-                app.hand = hand;
-                if app.cursor >= app.hand.len() {
-                    app.cursor = app.hand.len().saturating_sub(1);
+            if Some(player_id) == app.game_state.player_id {
+                app.game_state.hand = hand;
+                if app.cursor >= app.game_state.hand.len() {
+                    app.cursor = app.game_state.hand.len().saturating_sub(1);
                 }
             }
         }
@@ -479,22 +499,22 @@ fn ui(f: &mut ratatui::Frame<'_>, app: &AppState) {
     match app.mode {
         UiMode::ColorPick => draw_color_picker_popup(f, size, app),
         UiMode::DrawnCardPlayable { .. } => draw_drawn_playable_popup(f, size),
+        UiMode::NameInput => draw_name_input_popup(f, size, app),
+        UiMode::Scoreboard => draw_scoreboard_popup(f, size, app),
         UiMode::Normal => {}
     }
 }
 
 fn draw_status(f: &mut ratatui::Frame<'_>, area: Rect, app: &AppState) {
     let title = format!(
-        "UNO | 玩家:{} | 当前:{} | 方向:{}",
-        app.player_id
+        "UNO | 房间:{} | 玩家:{} | 当前:{} | 方向:{}",
+        app.room_id.as_deref().unwrap_or("-"),
+        app.game_state
+            .player_id
             .map(|v| v.to_string())
             .unwrap_or_else(|| "-".into()),
-        app.current_player,
-        if app.clockwise {
-            "顺时针"
-        } else {
-            "逆时针"
-        }
+        app.game_state.current_player,
+        if app.game_state.clockwise { "顺时针" } else { "逆时针" }
     );
     let para = Paragraph::new(title).block(Block::default().borders(Borders::ALL).title("状态"));
     f.render_widget(para, area);
@@ -511,8 +531,12 @@ fn draw_main(f: &mut ratatui::Frame<'_>, area: Rect, app: &AppState) {
         .split(area);
     // 左：玩家
     let mut players_text: Vec<Line> = Vec::new();
-    for (i, (name, n)) in app.players_cards_count.iter().enumerate() {
-        let turn = if i == app.current_player { " ←" } else { "" };
+    for (i, (name, n)) in app.game_state.players_cards_count.iter().enumerate() {
+        let turn = if i == app.game_state.current_player {
+            " ←"
+        } else {
+            ""
+        };
         players_text.push(Line::from(format!("{}: {:>2}{}", name, n, turn)));
     }
     let players = Paragraph::new(Text::from(players_text))
@@ -520,17 +544,18 @@ fn draw_main(f: &mut ratatui::Frame<'_>, area: Rect, app: &AppState) {
     f.render_widget(players, cols[0]);
     // 中：桌面
     let mut lines = vec![Line::from("顶部牌:")];
-    match &app.top_card {
+    match &app.game_state.top_card {
         None => lines.push(Line::from("无")),
         Some(c) => lines.push(card_line(c, false)),
     };
     lines.push(Line::from(""));
-    lines.push(Line::from(app.input_hint.as_str()));
+    lines.extend(app.input_hint.clone());
     let desk = Paragraph::new(Text::from(lines))
         .block(Block::default().borders(Borders::ALL).title("桌面"));
     f.render_widget(desk, cols[1]);
     // 右：手牌
     let hand_lines: Vec<Line> = app
+        .game_state
         .hand
         .iter()
         .enumerate()
@@ -590,6 +615,108 @@ fn draw_drawn_playable_popup(f: &mut ratatui::Frame<'_>, area: Rect) {
         .block(Block::default().borders(Borders::ALL).title("摸牌可出"));
     f.render_widget(block, popup);
 }
+fn handle_key_name_input(key: KeyEvent, app: &mut AppState, tx: &Sender<Client2Server>) -> io::Result<()> {
+    match key.code {
+        KeyCode::Esc => { app.mode = UiMode::Normal; }
+        KeyCode::Tab => { app.input_focus = match app.input_focus { InputFocus::Room => InputFocus::Name, InputFocus::Name => InputFocus::Room }; }
+        KeyCode::Enter => {
+            if app.room_input.trim().is_empty() { app.push_log("房间ID不能为空"); }
+            else if app.name_input.trim().is_empty() { app.push_log("昵称不能为空"); }
+            else {
+                let room_id = app.room_input.trim().to_string();
+                let name = app.name_input.trim().to_string();
+                tx.send(Client2Server::JoinGame { room_id: room_id.clone(), name: name.clone() }).ok();
+                app.room_id = Some(room_id.clone());
+                app.push_log(format!("发送 JoinGame room={} name={}", room_id, name));
+                app.mode = UiMode::Normal;
+                app.input_hint = vec![Line::from("S 开局"), Line::from("↑/↓ 选牌 ...")];
+            }
+        }
+        KeyCode::Backspace => {
+            match app.input_focus { InputFocus::Room => { app.room_input.pop(); } InputFocus::Name => { app.name_input.pop(); } }
+        }
+        KeyCode::Left => {}
+        KeyCode::Right => {}
+        KeyCode::Char(c) => {
+            if !c.is_control() {
+                match app.input_focus {
+                    InputFocus::Room => if app.room_input.len() < 24 { app.room_input.push(c); },
+                    InputFocus::Name => if app.name_input.len() < 24 { app.name_input.push(c); },
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+fn draw_name_input_popup(f: &mut ratatui::Frame<'_>, area: Rect, app: &AppState) {
+    let popup = centered_rect(60, 40, area);
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from("输入房间与昵称 (Tab 切换, Enter 确认 / Esc 取消)"));
+    lines.push(Line::from(""));
+    let room_style = if matches!(app.input_focus, InputFocus::Room) { Style::default().fg(TColor::Yellow).add_modifier(Modifier::BOLD | Modifier::UNDERLINED) } else { Style::default().fg(TColor::White) };
+    let name_style = if matches!(app.input_focus, InputFocus::Name) { Style::default().fg(TColor::Yellow).add_modifier(Modifier::BOLD | Modifier::UNDERLINED) } else { Style::default().fg(TColor::White) };
+    lines.push(Line::from(vec![Span::styled("房间: ", Style::default().fg(TColor::Cyan)), Span::styled(if app.room_input.is_empty() { "<空>".into() } else { app.room_input.clone() }, room_style)]));
+    lines.push(Line::from(vec![Span::styled("昵称: ", Style::default().fg(TColor::Cyan)), Span::styled(if app.name_input.is_empty() { "<空>".into() } else { app.name_input.clone() }, name_style)]));
+    if let Some(r) = &app.room_id { lines.push(Line::from(format!("已加入房间: {}", r))); }
+    let block = Paragraph::new(Text::from(lines)).block(Block::default().borders(Borders::ALL).title("加入游戏"));
+    f.render_widget(block, popup);
+}
+fn handle_key_scoreboard(
+    key: KeyEvent,
+    app: &mut AppState,
+    tx: &Sender<Client2Server>,
+) -> io::Result<()> {
+    match key.code {
+        KeyCode::Esc | KeyCode::Enter => {
+            app.mode = UiMode::Normal;
+        }
+        KeyCode::Char('n') => {
+            if let Some(pid) = app.game_state.player_id {
+                tx.send(Client2Server::JoinGame { 
+                    room_id: app.room_id.clone().unwrap().to_string(),
+                    name: app.name_input.clone(),
+                } ).ok();
+                app.push_log(format!("{} 想再来一局", app.name_input));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+fn draw_scoreboard_popup(f: &mut ratatui::Frame<'_>, area: Rect, app: &AppState) {
+    if let Some(entries) = &app.scoreboard {
+        let popup = centered_rect(60, 60, area);
+        let mut lines: Vec<Line> = Vec::new();
+        lines.push(Line::from("本局结果 (Enter/Esc 关闭, N 再来一局)"));
+        lines.push(Line::from(""));
+        for e in entries {
+            let style = if e.is_winner {
+                Style::default()
+                    .fg(TColor::Green)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(TColor::White)
+            };
+            let line = Line::from(vec![
+                Span::styled(
+                    format!("#{:<2} ", e.rank),
+                    Style::default().fg(TColor::Yellow),
+                ),
+                Span::styled(format!("{:<12}", e.name), style),
+                Span::styled(
+                    format!(" 分数: {:>4}", e.score),
+                    Style::default().fg(TColor::Cyan),
+                ),
+                Span::raw(if e.is_winner { "  <- WIN" } else { "" }),
+            ]);
+            lines.push(line);
+        }
+        let block = Paragraph::new(Text::from(lines))
+            .block(Block::default().borders(Borders::ALL).title("比分"));
+        f.render_widget(block, popup);
+    }
+}
 fn centered_rect(pct_x: u16, pct_y: u16, r: Rect) -> Rect {
     let vert = Layout::default()
         .direction(Direction::Vertical)
@@ -617,21 +744,33 @@ fn handle_events(app: &mut AppState, events: &[GE], _tx: &Sender<Client2Server>)
             GE::PlayerJoined { player_id, name } => {
                 app.push_log(format!("Player {} joined: {}", player_id, name))
             }
+            GE::GameStarted { game_id } => {
+                app.push_log(format!("Game started: {}", game_id));
+                app.mode = UiMode::Normal;
+                app.input_hint = vec![
+                    Line::from("↑/↓ 选牌"),
+                    Line::from("Enter 出牌"),
+                    Line::from("D 摸牌"),
+                    Line::from("P 跳过"),
+                    Line::from("U UNO"),
+                    Line::from("Q 退出"),
+                ];
+            }
             GE::CardPlayed { player_id, card } => {
                 app.push_log(format!("Player {} played {}", player_id, card.to_string()))
             }
             GE::GameError { message } => app.push_log(format!("Error: {}", message)),
             GE::CardDraw { player_id, card } => {
-                if Some(*player_id) == app.player_id {
+                if Some(*player_id) == app.game_state.player_id {
                     app.push_log(format!("You drew: {}", card.to_string()));
                 } else {
                     app.push_log(format!("Player {} drew", player_id));
                 }
             }
             GE::DrawnCardPlayable { player_id } => {
-                if Some(*player_id) == app.player_id {
-                    if !app.hand.is_empty() {
-                        let idx = app.hand.len() - 1;
+                if Some(*player_id) == app.game_state.player_id {
+                    if !app.game_state.hand.is_empty() {
+                        let idx = app.game_state.hand.len() - 1;
                         app.mode = UiMode::DrawnCardPlayable { card_index: idx };
                         app.push_log("你刚摸的牌可立即出");
                     }
@@ -648,7 +787,26 @@ fn handle_events(app: &mut AppState, events: &[GE], _tx: &Sender<Client2Server>)
                 app.push_log(format!("+2 -> Player {}", target_player_id))
             }
             GE::GameOver { winner, scores } => {
-                app.push_log(format!("Game over! Winner {} scores {:?}", winner, scores))
+                app.push_log(format!("Game over! Winner {} scores {:?}", winner, scores));
+                // 构建比分表：UNO 规则中分数越低（负分绝对值越小）谁赢？假设 winner 已经由服务器判断
+                let mut entries: Vec<ScoreEntry> = scores
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (name, sc))| ScoreEntry {
+                        name: name.clone(),
+                        score: *sc,
+                        rank: 0,
+                        is_winner: i == 0, // 服务端已经排好序,第一个就是赢家
+                    })
+                    .collect();
+                // 排序：按分数升序
+                entries.sort_by_key(|e| e.score);
+                // 赋 rank
+                for (idx, e) in entries.iter_mut().enumerate() {
+                    e.rank = idx + 1;
+                }
+                app.scoreboard = Some(entries);
+                app.mode = UiMode::Scoreboard;
             }
             GE::PlayerChallenged {
                 challenger_id,
@@ -663,7 +821,7 @@ fn handle_events(app: &mut AppState, events: &[GE], _tx: &Sender<Client2Server>)
             }
             GE::PlayerTurn { player_id } => app.push_log(format!("Turn: Player {}", player_id)),
             GE::TopCardChanged { top_card } => {
-                app.top_card = Some(*top_card);
+                app.game_state.top_card = Some(*top_card);
                 app.push_log("Top card changed");
             }
             GE::UnoCalled { player_id } => app.push_log(format!("Player {} UNO!", player_id)),

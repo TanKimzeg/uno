@@ -5,8 +5,8 @@ use serde::{Serialize, Deserialize};
 #[serde(tag = "type", content = "data")]
 pub enum Client2Server {
     JoinGame {
+        room_id: String,
         name: String,
-        
     },
     StartGame {
         player_id: usize,

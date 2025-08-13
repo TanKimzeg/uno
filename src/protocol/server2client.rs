@@ -19,10 +19,6 @@ pub enum Server2Client {
         hand: Vec<UnoCard>,
     },
     
-    GameStarted {
-        game_id: String,
-        players: Vec<String>,
-    },
     Events(Vec<GameEvent>),
     ServerError {
         message: String,
